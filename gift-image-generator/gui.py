@@ -88,8 +88,8 @@ class GiftImageGeneratorApp:
                 render_question(q, out_path, img_size=(1200, 800), font_path=None, include_answer=False, trim=True, trim_pad=10)
                 generated_images.append(out_path)
 
-            # Создаем обновленный GIFT файл во временную папку
-            out_gift_path = os.path.join(temp_dir, "questions_images.gift")
+            # Создаем выходной файл main.txt во временную папку (кодировка UTF-8)
+            out_gift_path = os.path.join(temp_dir, "main.txt")
             with open(out_gift_path, 'w', encoding='utf-8') as f:
                 letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                 for idx, q in enumerate(qs, start=1):
@@ -121,13 +121,13 @@ class GiftImageGeneratorApp:
                     except Exception as e:
                         print(f"Ошибка при обработке вопроса {idx}: {e}")
 
-            # Создаем ZIP-архив только с файлами (без промежуточных файлов в output_dir)
+            # Создаем ZIP-архив только с файлами из временной папки
             self.status_label.config(text="Создание архива...")
             self.root.update()
-            zip_path = os.path.join(output_dir, "generated_images.zip")
+            zip_path = os.path.join(output_dir, "generated.zip")
             with zipfile.ZipFile(zip_path, 'w') as zipf:
                 # Добавляем оригинальный GIFT файл
-                zipf.write(gift_path, os.path.basename(gift_path))
+                # zipf.write(gift_path, os.path.basename(gift_path))
                 # Добавляем новый GIFT файл
                 zipf.write(out_gift_path, os.path.basename(out_gift_path))
                 # Добавляем все изображения в подпапку "Image"

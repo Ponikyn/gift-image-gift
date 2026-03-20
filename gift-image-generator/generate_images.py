@@ -11,11 +11,11 @@ def parse_gift(path: str):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     gift_dir = os.path.dirname(os.path.abspath(path))
     for q_text, ans_block in matches:
-        # keep raw original question (to preserve literal sequences like \r\n in output GIFT)
+        # сохраняем оригинальный текст вопроса (чтобы сохранить литеральные последовательности вроде \r\n в выходном GIFT)
         q_raw = q_text
-        # detect <img ... src=...> in question text (handles escaped chars like \" and \=)
+        # ищем тег <img ... src=...> в тексте вопроса (учитываем экранированные символы вроде \" и \=)
         image_path = None
-        # normalize escaped sequences so regex can match both src\="..." and src="..."
+        # нормализуем экранированные последовательности, чтобы regex мог найти src\="..." и src="..."
         q_text_norm = q_text.replace('\\=', '=').replace('\\"', '"').replace("\\'", "'")
         img_match = re.search(r'<img[^>]*src\s*=\s*(?P<val>"[^"]*"|\'[^\']*\'|[^>\s]+)[^>]*>', q_text_norm, flags=re.I | re.S)
         if img_match:
@@ -48,7 +48,7 @@ def parse_gift(path: str):
             q_text = re.sub(r'<img[^>]*>', '', q_text, flags=re.I | re.S)
             q_text = re.sub(r'<\s*/?\s*br\s*/?\s*>', '', q_text, flags=re.I)
 
-        # sanitize question text for rendering: remove literal escape sequences like \r\n that should stay in file but not on image
+        # подготовка текста вопроса для рендеринга: удаляем литеральные escape-последовательности вроде \r\n, которые должны остаться в файле, но не на изображении
         q = q_text.strip().replace("\n", " ")
         q = q.replace('\\r\\n', ' ').replace('\\n', ' ').replace('\\r', ' ')
         q = re.sub(r'\\+', '', q)
@@ -161,7 +161,7 @@ def render_question(qdata, out_path, img_size=(1200,800), font_path=None, includ
     if answer_font is None:
         answer_font = ImageFont.load_default()
 
-    # helper to get text size compatible across Pillow versions
+    # вспомогательная функция для получения размера текста (совместимость между версиями Pillow)
     def text_size(text, font):
         try:
             bbox = draw.textbbox((0, 0), text, font=font)
@@ -179,7 +179,7 @@ def render_question(qdata, out_path, img_size=(1200,800), font_path=None, includ
 
     y += 12  # небольшая пауза
 
-    # if question has an image, try to open and paste it here
+    # если у вопроса есть изображение, пытаемся открыть и вставить его
     if qdata.get("image"):
         try:
             img_file = qdata.get("image")
@@ -223,7 +223,7 @@ def render_question(qdata, out_path, img_size=(1200,800), font_path=None, includ
         except Exception as e:
             print(f"Warning: cannot open image {qdata.get('image')}: {e}")
 
-    # render answers
+    # отображаем варианты ответов
     if not qdata.get('keep_answers_raw'):
         letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         for i, a in enumerate(qdata["answers"]):
