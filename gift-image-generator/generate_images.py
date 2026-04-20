@@ -104,6 +104,56 @@ def wrap_text(text, font, draw, max_width):
         lines.append(line)
     return lines
 
+def render_answer_image(text, out_path, img_size=(1000,140), font_path=None, bg_color="white", text_color="black", trim=True, trim_pad=10):
+    W, H = img_size
+    margin = 20
+    img = Image.new("RGB", (W, H), bg_color)
+    draw = ImageDraw.Draw(img)
+
+    def try_font(name, size):
+        try:
+            return ImageFont.truetype(name, size)
+        except Exception:
+            return None
+
+    answer_font = None
+    if font_path:
+        try:
+            answer_font = ImageFont.truetype(font_path, 30)
+        except Exception:
+            answer_font = None
+
+    for name in ("arial.ttf", "Tahoma.ttf", "DejaVuSans.ttf"):
+        if answer_font is None:
+            answer_font = try_font(name, 30)
+
+    if answer_font is None:
+        answer_font = ImageFont.load_default()
+
+    def text_size(text, font):
+        try:
+            bbox = draw.textbbox((0, 0), text, font=font)
+            return bbox[2] - bbox[0], bbox[3] - bbox[1]
+        except Exception:
+            return font.getsize(text)
+
+    lines = wrap_text(text, answer_font, draw, W - 2 * margin)
+    y = margin
+    for line in lines:
+        w, h = text_size(line, answer_font)
+        x = max(margin, (W - w) // 2)
+        draw.text((x, y), line, font=answer_font, fill=text_color)
+        y += h + 8
+
+    if trim:
+        try:
+            rgb_bg = (255, 255, 255) if isinstance(bg_color, str) else bg_color
+            img = crop_whitespace(img, bg_color=rgb_bg, pad=trim_pad)
+        except Exception:
+            pass
+    img.save(out_path, "PNG")
+
+
 def crop_whitespace(im: Image.Image, bg_color=(255,255,255), pad: int = 10):
     """Crop uniform background from all sides. Returns cropped image with `pad` added back.
     Uses ImageChops.difference against a solid background of same color."""
@@ -223,8 +273,8 @@ def render_question(qdata, out_path, img_size=(1200,800), font_path=None, includ
         except Exception as e:
             print(f"Warning: cannot open image {qdata.get('image')}: {e}")
 
-    # отображаем варианты ответов
-    if not qdata.get('keep_answers_raw'):
+    # отображаем варианты ответов только если включено рендерить ответы на изображении
+    if include_answer and not qdata.get('keep_answers_raw'):
         letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         for i, a in enumerate(qdata["answers"]):
             display_text = a.get("display") if a.get("display") is not None else a.get("text")
@@ -240,7 +290,7 @@ def render_question(qdata, out_path, img_size=(1200,800), font_path=None, includ
                 y += line_h + 6
             y += 6
     else:
-        # special question: answers are kept raw in output GIFT; do not render them on image
+        # специальные вопросы: ответы остаются в исходном GIFT и не рисуются на изображении
         pass
 
     # optionally trim whitespace margins
@@ -288,21 +338,31 @@ def main(infile, outdir, width, height, font, show_answer, out_gift, no_trim, tr
         return
 
     # render images
-    generated = []
+    question_images = []
+    answer_images_per_question = []
     for idx, q in enumerate(qs, start=1):
-        out = os.path.join(outdir, f"q{idx:03d}.png")
-        render_question(q, out, img_size=(width, height), font_path=font, include_answer=show_answer, trim=not no_trim, trim_pad=trim_pad)
-        generated.append(out)
-    print(f"Saved {len(qs)} images to {outdir}")
+        question_path = os.path.join(outdir, f"q{idx:03d}.png")
+        render_question(q, question_path, img_size=(width, height), font_path=font, include_answer=False, trim=not no_trim, trim_pad=trim_pad)
+        question_images.append(question_path)
+
+        answer_paths = []
+        if not q.get('keep_answers_raw'):
+            for a_idx, a in enumerate(q['answers'], start=1):
+                answer_path = os.path.join(outdir, f"q{idx:03d}_ans{a_idx:02d}.png")
+                render_answer_image(a.get('display'), answer_path, img_size=(1000, 120), font_path=font, trim=True, trim_pad=trim_pad)
+                answer_paths.append(answer_path)
+        answer_images_per_question.append(answer_paths)
+
+    print(f"Saved {len(question_images)} images to {outdir}")
 
     # create a GIFT file where each question is replaced by a link to the generated image
     if not os.path.isabs(out_gift):
         out_gift = os.path.join(script_dir, out_gift)
     try:
         with open(out_gift, 'w', encoding='utf-8') as f:
-            letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
             for idx, q in enumerate(qs, start=1):
-                img_path = generated[idx-1]
+                img_path = question_images[idx-1]
+                answer_paths = answer_images_per_question[idx-1]
                 # get actual image size (after any resizing)
                 try:
                     with Image.open(img_path) as im:
@@ -315,28 +375,30 @@ def main(infile, outdir, width, height, font, show_answer, out_gift, no_trim, tr
                     img_tag = f"\\r\\n</br>\n<img height\\=\"{h}px\" width\\=\"{w}px\" src\\=\"@@PLUGINFILE@@/Image/{basename}\">"
                 else:
                     img_tag = f"\\r\\n</br>\n<img src\\=\"@@PLUGINFILE@@/Image/{basename}\">"
+                if answer_paths:
+                    for answer_path in answer_paths:
+                        answer_name = os.path.basename(answer_path)
+                        img_tag += f"\\r\\n</br>\n<img src\\=\"@@PLUGINFILE@@/Image/{answer_name}\">"
                 f.write(img_tag + "{\n")
                 # If this question keeps answers raw, write the original answer block unchanged
                 if q.get('keep_answers_raw'):
                     raw_ans = q.get('raw_answers', '').rstrip()
-                    # write original answers exactly (trim trailing newlines to control formatting)
                     f.write(raw_ans + "\n")
                 else:
-                    # write answers as letters matching image labels (with weights/lhs if present)
-                    for i, a in enumerate(q['answers']):
-                        letter = letters[i] if i < len(letters) else str(i+1)
+                    for a_idx, a in enumerate(q['answers'], start=1):
+                        answer_name = os.path.basename(answer_paths[a_idx-1])
                         prefix = '=' if a.get('correct') else '~'
                         weight = a.get('weight') or ''
                         lhs = a.get('lhs')
                         semi = a.get('semi') or ''
+                        answer_img = f"<img src\\=\"@@PLUGINFILE@@/Image/{answer_name}\">"
                         if lhs:
-                            # preserve weight (if any), lhs with '->', replace RHS with letter, and keep trailing semicolon
-                            f.write(f"{prefix}{weight}{lhs}{letter}{semi}\n")
+                            f.write(f"{prefix}{weight}{lhs}{answer_img}{semi}\n")
                         else:
                             if weight:
-                                f.write(f"{prefix}{weight}{letter}\n")
+                                f.write(f"{prefix}{weight}{answer_img}\n")
                             else:
-                                f.write(f"{prefix}{letter}\n")
+                                f.write(f"{prefix}{answer_img}\n")
                 f.write("}\n\n")
         print(f"Wrote GIFT with image tags to {out_gift}")
     except Exception as e:
