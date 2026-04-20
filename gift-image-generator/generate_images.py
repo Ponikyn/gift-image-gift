@@ -375,10 +375,6 @@ def main(infile, outdir, width, height, font, show_answer, out_gift, no_trim, tr
                     img_tag = f"\\r\\n</br>\n<img height\\=\"{h}px\" width\\=\"{w}px\" src\\=\"@@PLUGINFILE@@/Image/{basename}\">"
                 else:
                     img_tag = f"\\r\\n</br>\n<img src\\=\"@@PLUGINFILE@@/Image/{basename}\">"
-                if answer_paths:
-                    for answer_path in answer_paths:
-                        answer_name = os.path.basename(answer_path)
-                        img_tag += f"\\r\\n</br>\n<img src\\=\"@@PLUGINFILE@@/Image/{answer_name}\">"
                 f.write(img_tag + "{\n")
                 # If this question keeps answers raw, write the original answer block unchanged
                 if q.get('keep_answers_raw'):

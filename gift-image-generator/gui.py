@@ -111,10 +111,6 @@ class GiftImageGeneratorApp:
                             pass  # Проверяем, что файл существует
                         basename = os.path.basename(img_path)
                         img_tag = f"\\r\\n</br>\n<img src\\=\"@@PLUGINFILE@@/Image/{basename}\">"
-                        if answer_paths:
-                            for answer_path in answer_paths:
-                                answer_name = os.path.basename(answer_path)
-                                img_tag += f"\\r\\n</br>\n<img src\\=\"@@PLUGINFILE@@/Image/{answer_name}\">"
                         f.write(img_tag + "{\n")
                         if q.get('keep_answers_raw'):
                             raw_ans = q.get('raw_answers', '').rstrip()
