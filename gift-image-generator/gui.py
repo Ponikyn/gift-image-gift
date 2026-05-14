@@ -87,7 +87,8 @@ class GiftImageGeneratorApp:
             self.root.update()
             generated_images = []
             generated_answer_images = []
-            for idx, q in enumerate(qs, start=1):
+            question_items = [item for item in qs if item.get('type') == 'question']
+            for idx, q in enumerate(question_items, start=1):
                 question_path = os.path.join(temp_dir, f"q{idx:03d}.png")
                 render_question(q, question_path, img_size=(1200, 800), font_path=None, include_answer=False, trim=True, trim_pad=10)
                 generated_images.append(question_path)
@@ -96,43 +97,41 @@ class GiftImageGeneratorApp:
                 if not q.get('keep_answers_raw'):
                     for a_idx, a in enumerate(q['answers'], start=1):
                         answer_path = os.path.join(temp_dir, f"q{idx:03d}_ans{a_idx:02d}.png")
-                        render_answer_image(a.get('display'), answer_path, img_size=(1000, 120), font_path=None, trim=True, trim_pad=10)
+                        render_answer_image(a.get('lhs', '') + a.get('display', ''), answer_path, img_size=(1000, 120), font_path=None, trim=True, trim_pad=10)
                         answer_paths.append(answer_path)
                 generated_answer_images.append(answer_paths)
 
             # Создаем выходной файл main.txt во временную папку (кодировка UTF-8)
             out_gift_path = os.path.join(temp_dir, "main.txt")
             with open(out_gift_path, 'w', encoding='utf-8') as f:
-                for idx, q in enumerate(qs, start=1):
-                    img_path = generated_images[idx-1]
-                    answer_paths = generated_answer_images[idx-1]
+                question_idx = 0
+                for item in qs:
+                    if item.get('type') == 'category':
+                        f.write(item.get('raw', '').rstrip() + "\n\n")
+                        continue
+                    question_idx += 1
+                    img_path = generated_images[question_idx-1]
+                    answer_paths = generated_answer_images[question_idx-1]
                     try:
                         with open(img_path, 'rb') as im_file:
                             pass  # Проверяем, что файл существует
                         basename = os.path.basename(img_path)
                         img_tag = f"\\r\\n</br>\n<img src\\=\"@@PLUGINFILE@@/Image/{basename}\">"
                         f.write(img_tag + "{\n")
-                        if q.get('keep_answers_raw'):
-                            raw_ans = q.get('raw_answers', '').rstrip()
+                        if item.get('keep_answers_raw'):
+                            raw_ans = item.get('raw_answers', '').rstrip()
                             f.write(raw_ans + "\n")
                         else:
                             for a_idx, a in enumerate(q['answers'], start=1):
                                 answer_name = os.path.basename(answer_paths[a_idx-1])
                                 prefix = '=' if a.get('correct') else '~'
                                 weight = a.get('weight') or ''
-                                lhs = a.get('lhs')
                                 semi = a.get('semi') or ''
                                 answer_img = f"<img src\\=\"@@PLUGINFILE@@/Image/{answer_name}\">"
-                                if lhs:
-                                    f.write(f"{prefix}{weight}{lhs}{answer_img}{semi}\n")
-                                else:
-                                    if weight:
-                                        f.write(f"{prefix}{weight}{answer_img}\n")
-                                    else:
-                                        f.write(f"{prefix}{answer_img}\n")
+                                f.write(f"{prefix}{weight}{answer_img}{semi}\n")
                         f.write("}\n\n")
                     except Exception as e:
-                        print(f"Ошибка при обработке вопроса {idx}: {e}")
+                        print(f"Ошибка при обработке вопроса {question_idx}: {e}")
 
             # Создаем ZIP-архив только с файлами из временной папки
             self.status_label.config(text="Создание архива...")

@@ -337,10 +337,12 @@ def main(infile, outdir, width, height, font, show_answer, out_gift, no_trim, tr
         print(f"No questions found in {infile}")
         return
 
+    question_items = [item for item in qs if item.get('type') == 'question']
+
     # render images
     question_images = []
     answer_images_per_question = []
-    for idx, q in enumerate(qs, start=1):
+    for idx, q in enumerate(question_items, start=1):
         question_path = os.path.join(outdir, f"q{idx:03d}.png")
         render_question(q, question_path, img_size=(width, height), font_path=font, include_answer=False, trim=not no_trim, trim_pad=trim_pad)
         question_images.append(question_path)
@@ -349,7 +351,7 @@ def main(infile, outdir, width, height, font, show_answer, out_gift, no_trim, tr
         if not q.get('keep_answers_raw'):
             for a_idx, a in enumerate(q['answers'], start=1):
                 answer_path = os.path.join(outdir, f"q{idx:03d}_ans{a_idx:02d}.png")
-                render_answer_image(a.get('display'), answer_path, img_size=(1000, 120), font_path=font, trim=True, trim_pad=trim_pad)
+                render_answer_image(a.get('lhs', '') + a.get('display', ''), answer_path, img_size=(1000, 120), font_path=font, trim=True, trim_pad=trim_pad)
                 answer_paths.append(answer_path)
         answer_images_per_question.append(answer_paths)
 
@@ -360,23 +362,26 @@ def main(infile, outdir, width, height, font, show_answer, out_gift, no_trim, tr
         out_gift = os.path.join(script_dir, out_gift)
     try:
         with open(out_gift, 'w', encoding='utf-8') as f:
-            for idx, q in enumerate(qs, start=1):
-                img_path = question_images[idx-1]
-                answer_paths = answer_images_per_question[idx-1]
-                # get actual image size (after any resizing)
+            question_idx = 0
+            for item in qs:
+                if item.get('type') == 'category':
+                    f.write(item.get('raw', '').rstrip() + "\n\n")
+                    continue
+                question_idx += 1
+                q = item
+                img_path = question_images[question_idx-1]
+                answer_paths = answer_images_per_question[question_idx-1]
                 try:
                     with Image.open(img_path) as im:
                         w, h = im.size
                 except Exception:
                     w, h = None, None
                 basename = os.path.basename(img_path)
-                # build the image tag with literal "\\r\\n" prefix (so file keeps backslash sequences)
                 if w and h:
                     img_tag = f"\\r\\n</br>\n<img height\\=\"{h}px\" width\\=\"{w}px\" src\\=\"@@PLUGINFILE@@/Image/{basename}\">"
                 else:
                     img_tag = f"\\r\\n</br>\n<img src\\=\"@@PLUGINFILE@@/Image/{basename}\">"
                 f.write(img_tag + "{\n")
-                # If this question keeps answers raw, write the original answer block unchanged
                 if q.get('keep_answers_raw'):
                     raw_ans = q.get('raw_answers', '').rstrip()
                     f.write(raw_ans + "\n")
@@ -385,16 +390,9 @@ def main(infile, outdir, width, height, font, show_answer, out_gift, no_trim, tr
                         answer_name = os.path.basename(answer_paths[a_idx-1])
                         prefix = '=' if a.get('correct') else '~'
                         weight = a.get('weight') or ''
-                        lhs = a.get('lhs')
                         semi = a.get('semi') or ''
                         answer_img = f"<img src\\=\"@@PLUGINFILE@@/Image/{answer_name}\">"
-                        if lhs:
-                            f.write(f"{prefix}{weight}{lhs}{answer_img}{semi}\n")
-                        else:
-                            if weight:
-                                f.write(f"{prefix}{weight}{answer_img}\n")
-                            else:
-                                f.write(f"{prefix}{answer_img}\n")
+                        f.write(f"{prefix}{weight}{answer_img}{semi}\n")
                 f.write("}\n\n")
         print(f"Wrote GIFT with image tags to {out_gift}")
     except Exception as e:
