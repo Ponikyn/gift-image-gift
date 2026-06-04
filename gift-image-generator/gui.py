@@ -10,36 +10,51 @@ class GiftImageGeneratorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("GIFT Image Generator")
-        self.root.geometry("500x300")
-        self.root.resizable(False, False)
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        width = max(500, min(900, int(screen_width * 0.6)))
+        height = max(300, min(650, int(screen_height * 0.45)))
+        x = (screen_width - width) // 2
+        y = (screen_height - height) // 2
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
         self.root.minsize(500, 300)
-        self.root.maxsize(500, 300)
+        self.root.grid_columnconfigure(0, weight=0)
+        self.root.grid_columnconfigure(1, weight=1)
+        self.root.grid_columnconfigure(2, weight=0)
+        self.root.grid_rowconfigure(5, weight=1)
 
         # Переменные для путей
         self.gift_file = tk.StringVar()
         self.image_folder = tk.StringVar()
-        self.output_folder = tk.StringVar(value=os.path.join(os.getcwd(), "output"))
+        # output_folder: пустое по умолчанию — пользователь должен выбрать папку вручную
+        self.output_folder = tk.StringVar()
+        # Флаг: запускать без использования внешних картинок
+        self.no_images_var = tk.BooleanVar(value=False)
 
         # Элементы интерфейса
         tk.Label(root, text="GIFT файл:").grid(row=0, column=0, sticky="w", padx=10, pady=5)
-        tk.Entry(root, textvariable=self.gift_file, width=40).grid(row=0, column=1, padx=10, pady=5)
+        tk.Entry(root, textvariable=self.gift_file, width=40).grid(row=0, column=1, sticky="ew", padx=10, pady=5)
         tk.Button(root, text="Выбрать", command=self.select_gift_file).grid(row=0, column=2, padx=10, pady=5)
 
         tk.Label(root, text="Папка с картинками:").grid(row=1, column=0, sticky="w", padx=10, pady=5)
-        tk.Entry(root, textvariable=self.image_folder, width=40).grid(row=1, column=1, padx=10, pady=5)
+        tk.Entry(root, textvariable=self.image_folder, width=40).grid(row=1, column=1, sticky="ew", padx=10, pady=5)
         tk.Button(root, text="Выбрать", command=self.select_image_folder).grid(row=1, column=2, padx=10, pady=5)
 
         tk.Label(root, text="Выходная папка:").grid(row=2, column=0, sticky="w", padx=10, pady=5)
-        tk.Entry(root, textvariable=self.output_folder, width=40).grid(row=2, column=1, padx=10, pady=5)
+        tk.Entry(root, textvariable=self.output_folder, width=40).grid(row=2, column=1, sticky="ew", padx=10, pady=5)
         tk.Button(root, text="Выбрать", command=self.select_output_folder).grid(row=2, column=2, padx=10, pady=5)
+
+        # Чекбокс: запуск без картинок
+        self.no_images_checkbox = tk.Checkbutton(root, text="Прогон без картинок (не требовать папку с изображениями)", variable=self.no_images_var)
+        self.no_images_checkbox.grid(row=3, column=0, columnspan=3, sticky="w", padx=10, pady=5)
 
         # Кнопка генерации
         self.generate_button = tk.Button(root, text="Генерировать изображения", command=self.generate_images, bg="green", fg="white")
-        self.generate_button.grid(row=3, column=0, columnspan=3, pady=20)
+        self.generate_button.grid(row=4, column=0, columnspan=3, sticky="ew", padx=10, pady=20)
 
         # Статус
         self.status_label = tk.Label(root, text="")
-        self.status_label.grid(row=4, column=0, columnspan=3, pady=5)
+        self.status_label.grid(row=5, column=0, columnspan=3, sticky="ew", padx=10, pady=5)
 
     def select_gift_file(self):
         file_path = filedialog.askopenfilename(filetypes=[("GIFT files", "*.gift"), ("All files", "*.*")])
@@ -64,11 +79,22 @@ class GiftImageGeneratorApp:
         if not gift_path or not os.path.exists(gift_path):
             messagebox.showerror("Ошибка", "Выберите корректный GIFT файл.")
             return
-        if not image_folder or not os.path.exists(image_folder):
-            messagebox.showerror("Ошибка", "Выберите корректную папку с картинками.")
-            return
+        # если флажок "без картинок" не установлен — проверяем папку с картинками
+        if not self.no_images_var.get():
+            if not image_folder or not os.path.exists(image_folder):
+                messagebox.showerror("Ошибка", "Выберите корректную папку с картинками.")
+                return
 
-        os.makedirs(output_dir, exist_ok=True)
+        # Проверяем, что пользователь выбрал выходную папку
+        if not output_dir:
+            messagebox.showerror("Ошибка", "Выберите выходную папку для архива.")
+            return
+        # Пытаемся создать выходную папку, если её ещё нет
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось создать выходную папку: {e}")
+            return
 
         # Создаем временную папку для промежуточных файлов
         temp_dir = tempfile.mkdtemp()
@@ -88,6 +114,10 @@ class GiftImageGeneratorApp:
             generated_images = []
             generated_answer_images = []
             question_items = [item for item in qs if item.get('type') == 'question']
+            # Если пользователь выбрал прогон без картинок — убираем ссылки на внешние изображения
+            if self.no_images_var.get():
+                for q in question_items:
+                    q['image'] = None
             for idx, q in enumerate(question_items, start=1):
                 question_path = os.path.join(temp_dir, f"q{idx:03d}.png")
                 render_question(q, question_path, img_size=(1200, 800), font_path=None, include_answer=False, trim=True, trim_pad=10)
@@ -97,7 +127,8 @@ class GiftImageGeneratorApp:
                 if not q.get('keep_answers_raw'):
                     for a_idx, a in enumerate(q['answers'], start=1):
                         answer_path = os.path.join(temp_dir, f"q{idx:03d}_ans{a_idx:02d}.png")
-                        render_answer_image(a.get('lhs', '') + a.get('display', ''), answer_path, img_size=(1000, 120), font_path=None, trim=True, trim_pad=10)
+                        answer_text = f"{a.get('lhs') or ''}{a.get('display') or a.get('text') or ''}"
+                        render_answer_image(answer_text, answer_path, img_size=(1000, 120), font_path=None, trim=True, trim_pad=10)
                         answer_paths.append(answer_path)
                 generated_answer_images.append(answer_paths)
 

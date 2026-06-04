@@ -5,29 +5,34 @@ from PIL import Image, ImageDraw, ImageFont, ImageChops
 
 def parse_gift(path: str):
     text = open(path, "r", encoding="utf-8").read()
-    pattern = re.compile(r'(?s)(.*?)\{(.*?)\}')
-    matches = pattern.findall(text)
-    questions = []
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    gift_dir = os.path.dirname(os.path.abspath(path))
-    for q_text, ans_block in matches:
-        # сохраняем оригинальный текст вопроса (чтобы сохранить литеральные последовательности вроде \r\n в выходном GIFT)
+    lines = text.splitlines(True)
+    items = []
+    buffer = ""
+    in_question = False
+    brace_balance = 0
+
+    def flush_question(block):
+        if not block.strip():
+            return
+        start = block.find("{")
+        end = block.rfind("}")
+        if start < 0 or end < 0:
+            return
+        q_text = block[:start]
+        ans_block = block[start + 1:end]
         q_raw = q_text
-        # ищем тег <img ... src=...> в тексте вопроса (учитываем экранированные символы вроде \" и \=)
         image_path = None
-        # нормализуем экранированные последовательности, чтобы regex мог найти src\="..." и src="..."
         q_text_norm = q_text.replace('\\=', '=').replace('\\"', '"').replace("\\'", "'")
         img_match = re.search(r'<img[^>]*src\s*=\s*(?P<val>"[^"]*"|\'[^\']*\'|[^>\s]+)[^>]*>', q_text_norm, flags=re.I | re.S)
         if img_match:
             raw_val = img_match.group('val').strip()
-            # strip surrounding quotes if present
             if (raw_val.startswith('"') and raw_val.endswith('"')) or (raw_val.startswith("'") and raw_val.endswith("'")):
                 src = raw_val[1:-1]
             else:
                 src = raw_val
-            # remove plugin prefix if present
             cleaned = src.replace('@@PLUGINFILE@@/', '').lstrip('/\\')
-            # try candidate locations (prefer current gift dir and script Image folder)
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            gift_dir = os.path.dirname(os.path.abspath(path))
             candidates = [
                 cleaned,
                 os.path.join(gift_dir, cleaned),
@@ -44,11 +49,9 @@ def parse_gift(path: str):
                 print(f"Warning: image {src} not found for question; image will be skipped")
             else:
                 print(f"Found image for question: {image_path}")
-            # remove img tag and <br> tags from original question text so they won't be rendered as text
             q_text = re.sub(r'<img[^>]*>', '', q_text, flags=re.I | re.S)
             q_text = re.sub(r'<\s*/?\s*br\s*/?\s*>', '', q_text, flags=re.I)
 
-        # подготовка текста вопроса для рендеринга: удаляем литеральные escape-последовательности вроде \r\n, которые должны остаться в файле, но не на изображении
         q = q_text.strip().replace("\n", " ")
         q = q.replace('\\r\\n', ' ').replace('\\n', ' ').replace('\\r', ' ')
         q = re.sub(r'\\+', '', q)
@@ -56,14 +59,12 @@ def parse_gift(path: str):
         for m in re.finditer(r'([=~])([^\=~]+)', ans_block, flags=re.S):
             marker = m.group(1)
             ans = m.group(2).strip()
-            # detect weight prefix like %50% or %-100%
             weight = None
             content = ans
             wmatch = re.match(r'^\%(-?\d+)\%\s*(.*)', ans, flags=re.S)
             if wmatch:
                 weight = f"%{wmatch.group(1)}%"
                 content = wmatch.group(2).strip()
-            # detect arrow pattern LHS -> RHS[;]
             lhs = None
             semi = ''
             rhs = content
@@ -75,12 +76,40 @@ def parse_gift(path: str):
             display = rhs
             answers.append({"text": ans, "display": display, "weight": weight, "lhs": lhs, "semi": semi, "correct": marker == "="})
         if answers:
-            # determine if this is the special case: multiple '=' answers only -> keep raw answers unchanged in output GIFT and do not render answers on image
-            # BUT if any answer uses 'LHS -> RHS' syntax (lhs detected), do NOT treat as raw-answers-only case
             has_lhs = any(a.get('lhs') for a in answers)
             keep_raw = len(answers) > 1 and all(a.get('correct') for a in answers) and not has_lhs
-            questions.append({"question": q, "answers": answers, "image": image_path, "raw": q_raw, "raw_answers": ans_block, "keep_answers_raw": keep_raw})
-    return questions
+            items.append({
+                "type": "question",
+                "question": q,
+                "answers": answers,
+                "image": image_path,
+                "raw": q_raw,
+                "raw_answers": ans_block,
+                "keep_answers_raw": keep_raw,
+            })
+
+    for line in lines:
+        if not in_question and line.strip().startswith('$CATEGORY:'):
+            if buffer.strip():
+                flush_question(buffer)
+                buffer = ""
+            items.append({"type": "category", "raw": line.rstrip('\r\n')})
+            continue
+        buffer += line
+        if not in_question and '{' in line:
+            in_question = True
+            brace_balance = line.count('{') - line.count('}')
+        elif in_question:
+            brace_balance += line.count('{') - line.count('}')
+        if in_question and brace_balance <= 0:
+            flush_question(buffer)
+            buffer = ""
+            in_question = False
+            brace_balance = 0
+
+    if buffer.strip():
+        flush_question(buffer)
+    return items
 
 def wrap_text(text, font, draw, max_width):
     words = text.split()
