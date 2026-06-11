@@ -83,7 +83,9 @@ class GiftImageGeneratorApp:
             self.gift_entry.dnd_bind('<<Drop>>', self.on_gift_drop)
             self.image_entry.drop_target_register(DND_FILES)
             self.image_entry.dnd_bind('<<Drop>>', self.on_image_drop)
-            self.status_label.config(text="Можно перетаскивать GIFT файл и папку с картинками.")
+            self.output_entry.drop_target_register(DND_FILES)
+            self.output_entry.dnd_bind('<<Drop>>', self.on_output_drop)
+            self.status_label.config(text="Можно перетаскивать GIFT файл, папку с картинками и выходную папку.")
         else:
             self.status_label.config(text="Drag-and-drop отключён: установите tkinterdnd2 через pip.")
 
@@ -262,6 +264,15 @@ class GiftImageGeneratorApp:
             self.image_folder.set(os.path.dirname(path))
         else:
             messagebox.showerror("Ошибка", "Перетащите папку с изображениями или файл внутри неё.")
+
+    def on_output_drop(self, event):
+        path = self._normalize_drop_path(event.data)
+        if os.path.isdir(path):
+            self.output_folder.set(path)
+        elif os.path.isfile(path):
+            self.output_folder.set(os.path.dirname(path))
+        else:
+            messagebox.showerror("Ошибка", "Перетащите выходную папку или файл внутри неё.")
 
 if __name__ == "__main__":
     root = create_root()
