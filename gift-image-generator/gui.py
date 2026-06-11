@@ -173,6 +173,9 @@ class GiftImageGeneratorApp:
                     if item.get('type') == 'category':
                         f.write(item.get('raw', '').rstrip() + "\n\n")
                         continue
+                    if item.get('type') == 'comment':
+                        f.write(item.get('raw', '').rstrip() + "\n")
+                        continue
                     question_idx += 1
                     img_path = generated_images[question_idx-1]
                     answer_paths = generated_answer_images[question_idx-1]
