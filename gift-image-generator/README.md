@@ -27,6 +27,12 @@ pip install -r requirements.txt
 - `install_deps.ps1` — создаёт `.venv` и устанавливает зависимости в Windows PowerShell.
 - `install_deps.sh` — аналог для macOS/Linux.
 
+Поддержка drag-and-drop
+
+- В GUI можно перетаскивать GIFT файл на поле "GIFT файл".
+- Нажмите на поле "Папка с картинками" и перетащите папку с изображениями или файл из папки.
+- Если drag-and-drop не работает, установите зависимость: `pip install tkinterdnd2` или `pip install -r requirements.txt`.
+
 Запуск приложения
 
 После активации виртуального окружения запустите:

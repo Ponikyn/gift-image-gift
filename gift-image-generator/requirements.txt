@@ -1,3 +1,4 @@
 Pillow>=9.0
 click>=8.0
+tkinterdnd2>=0.3
 pyinstaller>=5.0

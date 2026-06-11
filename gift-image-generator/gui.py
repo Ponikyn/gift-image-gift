@@ -4,7 +4,26 @@ import shutil
 import tempfile
 import tkinter as tk
 from tkinter import filedialog, messagebox
+
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    TKDND_AVAILABLE = True
+except ImportError:
+    try:
+        from TkinterDnD2 import DND_FILES, TkinterDnD
+        TKDND_AVAILABLE = True
+    except ImportError:
+        DND_FILES = None
+        TkinterDnD = None
+        TKDND_AVAILABLE = False
+
 from generate_images import parse_gift, render_question, render_answer_image
+
+
+def create_root():
+    if TKDND_AVAILABLE:
+        return TkinterDnD.Tk()
+    return tk.Tk()
 
 class GiftImageGeneratorApp:
     def __init__(self, root):
@@ -33,15 +52,18 @@ class GiftImageGeneratorApp:
 
         # Элементы интерфейса
         tk.Label(root, text="GIFT файл:").grid(row=0, column=0, sticky="w", padx=10, pady=5)
-        tk.Entry(root, textvariable=self.gift_file, width=40).grid(row=0, column=1, sticky="ew", padx=10, pady=5)
+        self.gift_entry = tk.Entry(root, textvariable=self.gift_file, width=40)
+        self.gift_entry.grid(row=0, column=1, sticky="ew", padx=10, pady=5)
         tk.Button(root, text="Выбрать", command=self.select_gift_file).grid(row=0, column=2, padx=10, pady=5)
 
         tk.Label(root, text="Папка с картинками:").grid(row=1, column=0, sticky="w", padx=10, pady=5)
-        tk.Entry(root, textvariable=self.image_folder, width=40).grid(row=1, column=1, sticky="ew", padx=10, pady=5)
+        self.image_entry = tk.Entry(root, textvariable=self.image_folder, width=40)
+        self.image_entry.grid(row=1, column=1, sticky="ew", padx=10, pady=5)
         tk.Button(root, text="Выбрать", command=self.select_image_folder).grid(row=1, column=2, padx=10, pady=5)
 
         tk.Label(root, text="Выходная папка:").grid(row=2, column=0, sticky="w", padx=10, pady=5)
-        tk.Entry(root, textvariable=self.output_folder, width=40).grid(row=2, column=1, sticky="ew", padx=10, pady=5)
+        self.output_entry = tk.Entry(root, textvariable=self.output_folder, width=40)
+        self.output_entry.grid(row=2, column=1, sticky="ew", padx=10, pady=5)
         tk.Button(root, text="Выбрать", command=self.select_output_folder).grid(row=2, column=2, padx=10, pady=5)
 
         # Чекбокс: запуск без картинок
@@ -55,6 +77,15 @@ class GiftImageGeneratorApp:
         # Статус
         self.status_label = tk.Label(root, text="")
         self.status_label.grid(row=5, column=0, columnspan=3, sticky="ew", padx=10, pady=5)
+
+        if TKDND_AVAILABLE:
+            self.gift_entry.drop_target_register(DND_FILES)
+            self.gift_entry.dnd_bind('<<Drop>>', self.on_gift_drop)
+            self.image_entry.drop_target_register(DND_FILES)
+            self.image_entry.dnd_bind('<<Drop>>', self.on_image_drop)
+            self.status_label.config(text="Можно перетаскивать GIFT файл и папку с картинками.")
+        else:
+            self.status_label.config(text="Drag-and-drop отключён: установите tkinterdnd2 через pip.")
 
     def select_gift_file(self):
         file_path = filedialog.askopenfilename(filetypes=[("GIFT files", "*.gift"), ("All files", "*.*")])
@@ -188,7 +219,51 @@ class GiftImageGeneratorApp:
             # Удаляем временную папку со всеми файлами
             shutil.rmtree(temp_dir, ignore_errors=True)
 
+    def _normalize_drop_path(self, data):
+        data = data.strip()
+        paths = []
+        current = []
+        in_braces = False
+        for ch in data:
+            if ch == '{':
+                in_braces = True
+                current = []
+                continue
+            if ch == '}':
+                in_braces = False
+                paths.append(''.join(current).strip())
+                current = []
+                continue
+            if in_braces:
+                current.append(ch)
+            elif not ch.isspace():
+                current.append(ch)
+            elif current:
+                paths.append(''.join(current).strip())
+                current = []
+        if current:
+            paths.append(''.join(current).strip())
+        if paths:
+            return paths[0].strip('"')
+        return data.strip('"')
+
+    def on_gift_drop(self, event):
+        path = self._normalize_drop_path(event.data)
+        if os.path.isfile(path):
+            self.gift_file.set(path)
+        else:
+            messagebox.showerror("Ошибка", "Перетащите корректный GIFT файл.")
+
+    def on_image_drop(self, event):
+        path = self._normalize_drop_path(event.data)
+        if os.path.isdir(path):
+            self.image_folder.set(path)
+        elif os.path.isfile(path):
+            self.image_folder.set(os.path.dirname(path))
+        else:
+            messagebox.showerror("Ошибка", "Перетащите папку с изображениями или файл внутри неё.")
+
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = create_root()
     app = GiftImageGeneratorApp(root)
     root.mainloop()
