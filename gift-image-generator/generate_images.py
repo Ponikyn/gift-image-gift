@@ -89,6 +89,9 @@ def parse_gift(path: str):
             })
 
     for line in lines:
+        # Убираем целые строки-комментарии, начинающиеся с //
+        if line.lstrip().startswith('//'):
+            continue
         if not in_question and line.strip().startswith('$CATEGORY:'):
             if buffer.strip():
                 flush_question(buffer)
