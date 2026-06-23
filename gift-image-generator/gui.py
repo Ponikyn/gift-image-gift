@@ -152,17 +152,30 @@ class GiftImageGeneratorApp:
                 for q in question_items:
                     q['image'] = None
             for idx, q in enumerate(question_items, start=1):
+                if q.get('keep_answers_raw'):
+                    generated_images.append(None)
+                    generated_answer_images.append([])
+                    continue
+
                 question_path = os.path.join(temp_dir, f"q{idx:03d}.png")
                 render_question(q, question_path, img_size=(1200, 800), font_path=None, include_answer=False, trim=True, trim_pad=10)
                 generated_images.append(question_path)
 
+                # Копируем встроенное изображение из вопроса если оно есть
+                q_image = q.get('image')
+                if q_image and os.path.exists(q_image):
+                    img_basename = os.path.basename(q_image)
+                    dest_img = os.path.join(temp_dir, img_basename)
+                    # Останавливаем перезапись если несколько вопросов используют одно изображение
+                    if not os.path.exists(dest_img):
+                        shutil.copy2(q_image, dest_img)
+
                 answer_paths = []
-                if not q.get('keep_answers_raw'):
-                    for a_idx, a in enumerate(q['answers'], start=1):
-                        answer_path = os.path.join(temp_dir, f"q{idx:03d}_ans{a_idx:02d}.png")
-                        answer_text = f"{a.get('lhs') or ''}{a.get('display') or a.get('text') or ''}"
-                        render_answer_image(answer_text, answer_path, img_size=(1000, 120), font_path=None, trim=True, trim_pad=10)
-                        answer_paths.append(answer_path)
+                for a_idx, a in enumerate(q['answers'], start=1):
+                    answer_path = os.path.join(temp_dir, f"q{idx:03d}_ans{a_idx:02d}.png")
+                    answer_text = f"{a.get('lhs') or ''}{a.get('display') or a.get('text') or ''}"
+                    render_answer_image(answer_text, answer_path, img_size=(1000, 120), font_path=None, trim=True, trim_pad=10)
+                    answer_paths.append(answer_path)
                 generated_answer_images.append(answer_paths)
 
             # Создаем выходной файл main.txt во временную папку (кодировка UTF-8)
@@ -176,7 +189,15 @@ class GiftImageGeneratorApp:
                     if item.get('type') == 'comment':
                         f.write(item.get('raw', '').rstrip() + "\n")
                         continue
+
                     question_idx += 1
+                    if item.get('keep_answers_raw'):
+                        raw_block = item.get('raw_block')
+                        if raw_block is not None:
+                            f.write(raw_block.rstrip() + "\n\n")
+                        continue
+
+                    # Получаем параметры генерированных изображений
                     img_path = generated_images[question_idx-1]
                     answer_paths = generated_answer_images[question_idx-1]
                     try:
@@ -185,17 +206,13 @@ class GiftImageGeneratorApp:
                         basename = os.path.basename(img_path)
                         img_tag = f"\\r\\n</br>\n<img src\\=\"@@PLUGINFILE@@/Image/{basename}\">"
                         f.write(img_tag + "{\n")
-                        if item.get('keep_answers_raw'):
-                            raw_ans = item.get('raw_answers', '').rstrip()
-                            f.write(raw_ans + "\n")
-                        else:
-                            for a_idx, a in enumerate(q['answers'], start=1):
-                                answer_name = os.path.basename(answer_paths[a_idx-1])
-                                prefix = '=' if a.get('correct') else '~'
-                                weight = a.get('weight') or ''
-                                semi = a.get('semi') or ''
-                                answer_img = f"<img src\\=\"@@PLUGINFILE@@/Image/{answer_name}\">"
-                                f.write(f"{prefix}{weight}{answer_img}{semi}\n")
+                        for a_idx, a in enumerate(item['answers'], start=1):
+                            answer_name = os.path.basename(answer_paths[a_idx-1])
+                            prefix = '=' if a.get('correct') else '~'
+                            weight = a.get('weight') or ''
+                            semi = a.get('semi') or ''
+                            answer_img = f"<img src\\=\"@@PLUGINFILE@@/Image/{answer_name}\">"
+                            f.write(f"{prefix}{weight}{answer_img}{semi}\n")
                         f.write("}\n\n")
                     except Exception as e:
                         print(f"Ошибка при обработке вопроса {question_idx}: {e}")
@@ -209,10 +226,20 @@ class GiftImageGeneratorApp:
                 zipf.write(out_gift_path, os.path.basename(out_gift_path))
                 # Добавляем все изображения в подпапку "Image"
                 for img in generated_images:
-                    zipf.write(img, os.path.join("Image", os.path.basename(img)))
+                    if img and os.path.exists(img):
+                        zipf.write(img, os.path.join("Image", os.path.basename(img)))
                 for answer_paths in generated_answer_images:
                     for answer_path in answer_paths:
-                        zipf.write(answer_path, os.path.join("Image", os.path.basename(answer_path)))
+                        if answer_path and os.path.exists(answer_path):
+                            zipf.write(answer_path, os.path.join("Image", os.path.basename(answer_path)))
+                # Добавляем все остальные файлы из temp_dir (в т.ч. картинки из вопросов)
+                for fname in os.listdir(temp_dir):
+                    fpath = os.path.join(temp_dir, fname)
+                    if os.path.isfile(fpath) and fname not in ('main.txt', os.path.basename(out_gift_path)):
+                # Останавливаем передублирование если файл уже добавлен как вопрос или ответ
+                        if not any(fname == os.path.basename(img) for img in generated_images if img) and \
+                           not any(fname == os.path.basename(ap) for answer_paths in generated_answer_images for ap in answer_paths):
+                            zipf.write(fpath, os.path.join("Image", fname))
 
             self.status_label.config(text=f"Готово! Архив создан: {zip_path}")
             messagebox.showinfo("Успех", f"Изображения сгенерированы и упакованы в архив: {zip_path}")
@@ -221,7 +248,7 @@ class GiftImageGeneratorApp:
             os.startfile(output_dir)
         
         finally:
-            # Удаляем временную папку со всеми файлами
+            # Очищаем временную папку со всеми файлами
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     def _normalize_drop_path(self, data):
